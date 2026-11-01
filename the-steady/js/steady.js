@@ -37,6 +37,9 @@
       if (e.shiftKey && (doc.activeElement === a || doc.activeElement === panel)) { e.preventDefault(); z.focus(); }
       else if (!e.shiftKey && doc.activeElement === z) { e.preventDefault(); a.focus(); }
     }
+    var pointer = false;
+    doc.addEventListener('pointerdown', function () { pointer = true; }, true);
+    doc.addEventListener('keydown', function () { pointer = false; }, true);
     function open(from) {
       last = from;
       panel.classList.add('is-open'); panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true');
@@ -52,7 +55,11 @@
       root.style.overflow = '';
       outside.forEach(function (el) { if (el) el.removeAttribute('inert'); });
       doc.removeEventListener('keydown', onKey);
-      if (keep !== false && last && last.focus) last.focus();
+      if (keep !== false && last && last.focus) {
+        var back = last;
+        if (pointer) { back.classList.add('no-ring'); back.addEventListener('blur', function () { back.classList.remove('no-ring'); }, { once: true }); }
+        back.focus();
+      }
     }
     Array.prototype.forEach.call(openers, function (b) {
       b.setAttribute('role', 'button');
