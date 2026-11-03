@@ -1,4 +1,4 @@
-/* Silverback Tarzan, option 4 "Thermal". Menu, poster-first clips, the dock. Everything on the page works without this file. */
+/* Silverback Tarzan, option 6 "Thermal redesign". Altitude readout, menu, poster-first clips. Everything on the page works without this file. */
 (function () {
   'use strict';
   var doc = document, root = doc.documentElement;
@@ -7,7 +7,7 @@
 
   /* menu */
   var menu = doc.getElementById('menu'), lastFocus = null;
-  function setInert(on) { doc.querySelectorAll('.skip, main, .head, footer, .dock').forEach(function (el) { el.inert = on; }); }
+  function setInert(on) { doc.querySelectorAll('.skip, main, .bar, footer, .alt').forEach(function (el) { el.inert = on; }); }
   function focusables() { return Array.prototype.slice.call(menu.querySelectorAll('a[href], button')).filter(function (el) { return el.offsetParent !== null; }); }
   function onKey(e) {
     if (e.key === 'Escape') { e.preventDefault(); closeMenu(true); return; }
@@ -20,14 +20,52 @@
   function openMenu(t) { lastFocus = t; menu.hidden = false; root.classList.add('menu-open'); setInert(true); expanded('true'); menu.querySelector('.menu__close').focus(); doc.addEventListener('keydown', onKey); }
   function closeMenu(back) { menu.hidden = true; root.classList.remove('menu-open'); setInert(false); expanded('false'); doc.removeEventListener('keydown', onKey); if (back && lastFocus) lastFocus.focus(); }
   if (menu) {
+    window.matchMedia('(min-width: 1040px)').addEventListener && window.matchMedia('(min-width: 1040px)').addEventListener('change', function (q) { if (q.matches && !menu.hidden) closeMenu(false); });
     doc.querySelectorAll('[data-menu-open]').forEach(function (b) { b.addEventListener('click', function () { openMenu(b); }); });
     menu.querySelectorAll('[data-menu-close]').forEach(function (b) { b.addEventListener('click', function () { closeMenu(true); }); });
     menu.querySelectorAll('a[href]').forEach(function (a) { a.addEventListener('click', function () { closeMenu(false); }); });
   }
 
+  /* altitude: every section with data-alt is a waypoint, in the order of the page. The readout, the tape on the right edge and the
+     climb rate all come from where the top of the screen is between two waypoints. No waypoints means one fixed altitude (inner pages). */
+  var readV = doc.querySelector('[data-alt-v]'), readPh = doc.querySelector('[data-phase-v]'), readVs = doc.querySelector('[data-vario]'), mark = doc.querySelector('.alt__mark');
+  var pts = [], fixed = doc.querySelector('main[data-alt]'), CEIL = 3000, lastAlt = null, lastT = 0, vs = 0, shown = '', shownPh = '', shownVs = '', raf = 0, idle = 0;
+  function measure() {
+    var y0 = window.pageYOffset, bar = (doc.querySelector('.bar') || { offsetHeight: 56 }).offsetHeight;
+    pts = Array.prototype.map.call(doc.querySelectorAll('section[data-alt]'), function (s) { return { y: Math.max(0, s.getBoundingClientRect().top + y0 - bar), a: +s.getAttribute('data-alt'), ph: s.getAttribute('data-phase') || '' }; });
+    if (pts.length) pts[0].y = 0;
+  }
+  function altAt(y) {
+    if (!pts.length) return { a: fixed ? +fixed.getAttribute('data-alt') : 0, ph: fixed ? fixed.getAttribute('data-phase') : '' };
+    var i = 0; while (i < pts.length - 1 && pts[i + 1].y <= y) i++;
+    var p = pts[i], q = pts[i + 1];
+    if (!q) return { a: p.a, ph: p.ph };
+    var t = (y - p.y) / Math.max(1, q.y - p.y);
+    return { a: p.a + (q.a - p.a) * Math.min(1, Math.max(0, t)), ph: t > .5 ? q.ph : p.ph };
+  }
+  function paint(force) {
+    var now = performance.now(), r = altAt(window.pageYOffset), a = Math.round(r.a / 5) * 5;
+    if (lastAlt !== null && now > lastT) { var inst = (r.a - lastAlt) / ((now - lastT) / 1000) / 40; vs += (Math.max(-5, Math.min(5, inst)) - vs) * .25; }
+    lastAlt = r.a; lastT = now;
+    var txt = a.toLocaleString('en-GB'); if (readV && txt !== shown) { shown = txt; readV.textContent = txt; }
+    if (readPh && r.ph !== shownPh) { shownPh = r.ph; readPh.textContent = r.ph; }
+    var v = Math.abs(vs) < .05 ? 0 : vs, vt = (v > 0 ? '↑ +' : v < 0 ? '↓ −' : '→ ') + Math.abs(v).toFixed(1);
+    if (readVs && vt !== shownVs) { shownVs = vt; readVs.textContent = vt; readVs.setAttribute('data-dir', v > 0 ? 'up' : v < 0 ? 'down' : 'flat'); }
+    if (mark) mark.style.setProperty('--a', Math.min(100, r.a / CEIL * 100).toFixed(2));
+  }
+  function decay() { paint(); if (Math.abs(vs) > .05) idle = setTimeout(decay, 90); }
+  function tick() { raf = 0; paint(); clearTimeout(idle); idle = setTimeout(decay, 120); }
+  if (readV || mark) {
+    measure(); paint();
+    window.addEventListener('scroll', function () { if (!raf) raf = requestAnimationFrame(tick); }, { passive: true });
+    window.addEventListener('resize', function () { measure(); paint(); });
+    window.addEventListener('load', function () { measure(); paint(); });
+    if (doc.fonts && doc.fonts.ready) doc.fonts.ready.then(function () { measure(); paint(); });
+  }
+
   /* clips: the poster shows first; a clip fades in only on its first painted frame */
-  var PLAY = '<svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M5 3.5v13l11-6.5z"/></svg>';
-  var PAUSE = '<svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M4.5 3h4v14h-4zM11.5 3h4v14h-4z"/></svg>';
+  var PLAY = '<svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M5 3.5v13l11-6.5z"/></svg><span>Play</span>';
+  var PAUSE = '<svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M4.5 3h4v14h-4zM11.5 3h4v14h-4z"/></svg><span>Pause</span>';
   function wide(v) { return window.matchMedia(v.getAttribute('data-wide') || WIDE_CLIP).matches; } // phone footage keeps its portrait cut on portrait tablets
   function pick(v) {
     if (!wide(v)) return v.getAttribute('data-src');
@@ -39,6 +77,8 @@
     this.paused = false; this.seen = false; this.failed = false; this.src = null;
     v.muted = true; v.defaultMuted = true; v.playsInline = true;
     var s = this;
+    v.addEventListener('pause', function () { if (!v.seeking) s.mark('play'); });
+    v.addEventListener('playing', function () { s.mark('pause'); });
     if (this.btn) this.btn.addEventListener('click', function () { s.toggle(); });
     this.mark(reduce.matches ? 'play' : 'pause');
     if (reduce.matches && this.btn) this.btn.classList.add('ready');
@@ -88,11 +128,4 @@
     form.querySelector('.form__after').hidden = false;
     window.location.href = href;
   });
-
-  /* dock: only once the three doors have scrolled away; on the shop, once the header has gone on desktop */
-  var dock = doc.querySelector('.dock'), mark = doc.querySelector('[data-doors]') || doc.querySelector('.head');
-  if (dock && mark && 'IntersectionObserver' in window) {
-    dock.hidden = false;
-    new IntersectionObserver(function (es) { dock.classList.toggle('show', !es[0].isIntersecting && es[0].boundingClientRect.top < 0); }).observe(mark);
-  }
 })();
