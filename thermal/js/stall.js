@@ -1,12 +1,12 @@
-/* Silverback Tarzan, option 7 "Contact sheet". Menu, photographs developing, loupe, poster-first clips, mailto form.
-   Everything on the page works without this file: the photographs are simply there, the menu is a link to each page in the bar and footer. */
+/* Silverback Tarzan, option 8 "The Stall". Menu board, tags that swing when they arrive, poster-first clips, mailto form.
+   Everything on the page works without this file: every product, price and Buy button is plain HTML, and the bar and footer link to every page. */
 (function () {
   'use strict';
   var doc = document, root = doc.documentElement;
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
   var WIDE_CLIP = '(min-width: 700px), (min-aspect-ratio: 1/1)'; // keep in step with WIDE_CLIP in tools/build.js
 
-  /* menu: a contact sheet of the pages */
+  /* menu: a menu board */
   var menu = doc.getElementById('menu'), lastFocus = null, warmed = false;
   function setInert(on) { doc.querySelectorAll('.skip, main, .bar, footer').forEach(function (el) { el.inert = on; }); }
   function focusables() { return Array.prototype.slice.call(menu.querySelectorAll('a[href], button')).filter(function (el) { return el.offsetParent !== null; }); }
@@ -30,46 +30,10 @@
     menu.querySelectorAll('a[href]').forEach(function (a) { a.addEventListener('click', function () { closeMenu(false); }); });
   }
 
-  /* develop: each photograph comes out of its negative when it reaches the screen, and the grease pencil goes round it afterwards */
-  var devs = Array.prototype.slice.call(doc.querySelectorAll('.dev'));
-  function develop(el) { el.classList.add('is-dev'); }
-  if (devs.length) {
-    if (!('IntersectionObserver' in window)) devs.forEach(develop);
-    else {
-      var dio = new IntersectionObserver(function (es) { es.forEach(function (en) { if (en.isIntersecting) { develop(en.target); dio.unobserve(en.target); } }); }, { threshold: .18, rootMargin: '0px 0px -6% 0px' });
-      devs.forEach(function (d) { dio.observe(d); });
-      setTimeout(function () { devs.forEach(function (d) { var r = d.getBoundingClientRect(); if (r.bottom > 0 && r.top < innerHeight) develop(d); }); }, 2500); // a safety net, never needed in a normal browser
-    }
-    window.addEventListener('beforeprint', function () { devs.forEach(develop); });
-  }
-
-  /* loupe: on a device with a mouse, a photograph can be looked at closer, like on a light table */
-  var fine = window.matchMedia('(hover: hover) and (pointer: fine)');
-  if (fine.matches) {
-    var lp = doc.createElement('div'); lp.className = 'loupe'; lp.setAttribute('aria-hidden', 'true'); doc.body.appendChild(lp);
-    var Z = 2.3, R = 85, big = null, cur = null;
-    var biggest = function (img) { var best = img.currentSrc || img.src, bw = 0; (img.getAttribute('srcset') || '').split(',').forEach(function (p) { var q = p.trim().split(/\s+/), w = parseInt(q[1], 10) || 0; if (q[0] && w > bw) { bw = w; best = q[0]; } }); return best; };
-    var move = function (e) {
-      var s = cur; if (!s) return;
-      var img = s.querySelector('img'), r = s.getBoundingClientRect();
-      if (!img || !img.naturalWidth || e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) { lp.classList.remove('on'); return; }
-      var iw = img.naturalWidth, ih = img.naturalHeight, sc = Math.max(r.width / iw, r.height / ih);
-      var op = (getComputedStyle(img).objectPosition || '50% 50%').split(' '), px = parseFloat(op[0]) / 100, py = parseFloat(op[1]) / 100;
-      if (isNaN(px)) px = .5; if (isNaN(py)) py = .5;
-      var ox = (r.width - iw * sc) * px, oy = (r.height - ih * sc) * py;
-      var x = e.clientX - r.left, y = e.clientY - r.top;
-      lp.style.backgroundImage = 'url("' + (big || img.currentSrc) + '")';
-      lp.style.backgroundSize = (iw * sc * Z) + 'px ' + (ih * sc * Z) + 'px';
-      lp.style.backgroundPosition = (R - 4 - (x - ox) * Z) + 'px ' + (R - 4 - (y - oy) * Z) + 'px';
-      lp.style.transform = 'translate(' + (e.clientX - R) + 'px,' + (e.clientY - R) + 'px)';
-      lp.classList.add('on');
-    };
-    doc.querySelectorAll('.shot[data-loupe]').forEach(function (s) {
-      s.addEventListener('mouseenter', function () { cur = s; var im = s.querySelector('img'); big = im ? biggest(im) : null; if (big) { var pre = new Image(); pre.src = big; } });
-      s.addEventListener('mousemove', move);
-      s.addEventListener('mouseleave', function () { cur = null; lp.classList.remove('on'); });
-    });
-    window.addEventListener('scroll', function () { lp.classList.remove('on'); }, { passive: true });
+  /* tags: on a phone there is no hover, so each tag gives one small swing the first time it arrives on screen */
+  if (!reduce.matches && 'IntersectionObserver' in window && !window.matchMedia('(hover: hover)').matches) {
+    var sio = new IntersectionObserver(function (es) { es.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('swung'); sio.unobserve(en.target); } }); }, { threshold: .3 });
+    doc.querySelectorAll('.tag').forEach(function (t) { sio.observe(t); });
   }
 
   /* clips: the poster shows first; a clip fades in only on its first painted frame */
@@ -82,7 +46,7 @@
     return lg && (window.innerWidth > 1440 || window.innerHeight > 1000) ? lg : v.getAttribute('data-src-wide');
   }
   function Clip(v) {
-    this.v = v; this.btn = v.closest('.shot').querySelector('.vid-btn'); this.label = v.getAttribute('data-label');
+    this.v = v; this.btn = v.closest('.ph').querySelector('.vid-btn'); this.label = v.getAttribute('data-label');
     this.paused = false; this.seen = false; this.failed = false; this.src = null;
     v.muted = true; v.defaultMuted = true; v.playsInline = true;
     var s = this;
