@@ -1,13 +1,14 @@
-/* Silverback Tarzan, option 6 "Thermal redesign". Altitude readout, menu, poster-first clips. Everything on the page works without this file. */
+/* Silverback Tarzan, option 7 "Contact sheet". Menu, photographs developing, loupe, poster-first clips, mailto form.
+   Everything on the page works without this file: the photographs are simply there, the menu is a link to each page in the bar and footer. */
 (function () {
   'use strict';
   var doc = document, root = doc.documentElement;
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
   var WIDE_CLIP = '(min-width: 700px), (min-aspect-ratio: 1/1)'; // keep in step with WIDE_CLIP in tools/build.js
 
-  /* menu */
-  var menu = doc.getElementById('menu'), lastFocus = null;
-  function setInert(on) { doc.querySelectorAll('.skip, main, .bar, footer, .alt').forEach(function (el) { el.inert = on; }); }
+  /* menu: a contact sheet of the pages */
+  var menu = doc.getElementById('menu'), lastFocus = null, warmed = false;
+  function setInert(on) { doc.querySelectorAll('.skip, main, .bar, footer').forEach(function (el) { el.inert = on; }); }
   function focusables() { return Array.prototype.slice.call(menu.querySelectorAll('a[href], button')).filter(function (el) { return el.offsetParent !== null; }); }
   function onKey(e) {
     if (e.key === 'Escape') { e.preventDefault(); closeMenu(true); return; }
@@ -17,50 +18,58 @@
     else if (!e.shiftKey && doc.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
   }
   function expanded(v) { doc.querySelectorAll('[data-menu-open]').forEach(function (b) { b.setAttribute('aria-expanded', v); }); }
-  function openMenu(t) { lastFocus = t; menu.hidden = false; root.classList.add('menu-open'); setInert(true); expanded('true'); menu.querySelector('.menu__close').focus(); doc.addEventListener('keydown', onKey); }
+  function warm() { if (warmed || !menu) return; warmed = true; menu.querySelectorAll('img[loading="lazy"]').forEach(function (i) { i.loading = 'eager'; }); }
+  function openMenu(t) { warm(); lastFocus = t; menu.hidden = false; root.classList.add('menu-open'); setInert(true); expanded('true'); menu.querySelector('.menu__close').focus(); doc.addEventListener('keydown', onKey); }
   function closeMenu(back) { menu.hidden = true; root.classList.remove('menu-open'); setInert(false); expanded('false'); doc.removeEventListener('keydown', onKey); if (back && lastFocus) lastFocus.focus(); }
   if (menu) {
-    window.matchMedia('(min-width: 1040px)').addEventListener && window.matchMedia('(min-width: 1040px)').addEventListener('change', function (q) { if (q.matches && !menu.hidden) closeMenu(false); });
-    doc.querySelectorAll('[data-menu-open]').forEach(function (b) { b.addEventListener('click', function () { openMenu(b); }); });
+    doc.querySelectorAll('[data-menu-open]').forEach(function (b) {
+      b.addEventListener('click', function () { openMenu(b); });
+      ['pointerenter', 'touchstart', 'focus'].forEach(function (ev) { b.addEventListener(ev, warm, { once: true, passive: true }); });
+    });
     menu.querySelectorAll('[data-menu-close]').forEach(function (b) { b.addEventListener('click', function () { closeMenu(true); }); });
     menu.querySelectorAll('a[href]').forEach(function (a) { a.addEventListener('click', function () { closeMenu(false); }); });
   }
 
-  /* altitude: every section with data-alt is a waypoint, in the order of the page. The readout, the tape on the right edge and the
-     climb rate all come from where the top of the screen is between two waypoints. No waypoints means one fixed altitude (inner pages). */
-  var readV = doc.querySelector('[data-alt-v]'), readPh = doc.querySelector('[data-phase-v]'), readVs = doc.querySelector('[data-vario]'), mark = doc.querySelector('.alt__mark');
-  var pts = [], fixed = doc.querySelector('main[data-alt]'), CEIL = 3000, lastAlt = null, lastT = 0, vs = 0, shown = '', shownPh = '', shownVs = '', raf = 0, idle = 0;
-  function measure() {
-    var y0 = window.pageYOffset, bar = (doc.querySelector('.bar') || { offsetHeight: 56 }).offsetHeight;
-    pts = Array.prototype.map.call(doc.querySelectorAll('section[data-alt]'), function (s) { return { y: Math.max(0, s.getBoundingClientRect().top + y0 - bar), a: +s.getAttribute('data-alt'), ph: s.getAttribute('data-phase') || '' }; });
-    if (pts.length) pts[0].y = 0;
+  /* develop: each photograph comes out of its negative when it reaches the screen, and the grease pencil goes round it afterwards */
+  var devs = Array.prototype.slice.call(doc.querySelectorAll('.dev'));
+  function develop(el) { el.classList.add('is-dev'); }
+  if (devs.length) {
+    if (!('IntersectionObserver' in window)) devs.forEach(develop);
+    else {
+      var dio = new IntersectionObserver(function (es) { es.forEach(function (en) { if (en.isIntersecting) { develop(en.target); dio.unobserve(en.target); } }); }, { threshold: .18, rootMargin: '0px 0px -6% 0px' });
+      devs.forEach(function (d) { dio.observe(d); });
+      setTimeout(function () { devs.forEach(function (d) { var r = d.getBoundingClientRect(); if (r.bottom > 0 && r.top < innerHeight) develop(d); }); }, 2500); // a safety net, never needed in a normal browser
+    }
+    window.addEventListener('beforeprint', function () { devs.forEach(develop); });
   }
-  function altAt(y) {
-    if (!pts.length) return { a: fixed ? +fixed.getAttribute('data-alt') : 0, ph: fixed ? fixed.getAttribute('data-phase') : '' };
-    var i = 0; while (i < pts.length - 1 && pts[i + 1].y <= y) i++;
-    var p = pts[i], q = pts[i + 1];
-    if (!q) return { a: p.a, ph: p.ph };
-    var t = (y - p.y) / Math.max(1, q.y - p.y);
-    return { a: p.a + (q.a - p.a) * Math.min(1, Math.max(0, t)), ph: t > .5 ? q.ph : p.ph };
-  }
-  function paint(force) {
-    var now = performance.now(), r = altAt(window.pageYOffset), a = Math.round(r.a / 5) * 5;
-    if (lastAlt !== null && now > lastT) { var inst = (r.a - lastAlt) / ((now - lastT) / 1000) / 40; vs += (Math.max(-5, Math.min(5, inst)) - vs) * .25; }
-    lastAlt = r.a; lastT = now;
-    var txt = a.toLocaleString('en-GB'); if (readV && txt !== shown) { shown = txt; readV.textContent = txt; }
-    if (readPh && r.ph !== shownPh) { shownPh = r.ph; readPh.textContent = r.ph; }
-    var v = Math.abs(vs) < .05 ? 0 : vs, vt = (v > 0 ? '↑ +' : v < 0 ? '↓ −' : '→ ') + Math.abs(v).toFixed(1);
-    if (readVs && vt !== shownVs) { shownVs = vt; readVs.textContent = vt; readVs.setAttribute('data-dir', v > 0 ? 'up' : v < 0 ? 'down' : 'flat'); }
-    if (mark) mark.style.setProperty('--a', Math.min(100, r.a / CEIL * 100).toFixed(2));
-  }
-  function decay() { paint(); if (Math.abs(vs) > .05) idle = setTimeout(decay, 90); }
-  function tick() { raf = 0; paint(); clearTimeout(idle); idle = setTimeout(decay, 120); }
-  if (readV || mark) {
-    measure(); paint();
-    window.addEventListener('scroll', function () { if (!raf) raf = requestAnimationFrame(tick); }, { passive: true });
-    window.addEventListener('resize', function () { measure(); paint(); });
-    window.addEventListener('load', function () { measure(); paint(); });
-    if (doc.fonts && doc.fonts.ready) doc.fonts.ready.then(function () { measure(); paint(); });
+
+  /* loupe: on a device with a mouse, a photograph can be looked at closer, like on a light table */
+  var fine = window.matchMedia('(hover: hover) and (pointer: fine)');
+  if (fine.matches) {
+    var lp = doc.createElement('div'); lp.className = 'loupe'; lp.setAttribute('aria-hidden', 'true'); doc.body.appendChild(lp);
+    var Z = 2.3, R = 85, big = null, cur = null;
+    var biggest = function (img) { var best = img.currentSrc || img.src, bw = 0; (img.getAttribute('srcset') || '').split(',').forEach(function (p) { var q = p.trim().split(/\s+/), w = parseInt(q[1], 10) || 0; if (q[0] && w > bw) { bw = w; best = q[0]; } }); return best; };
+    var move = function (e) {
+      var s = cur; if (!s) return;
+      var img = s.querySelector('img'), r = s.getBoundingClientRect();
+      if (!img || !img.naturalWidth || e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) { lp.classList.remove('on'); return; }
+      var iw = img.naturalWidth, ih = img.naturalHeight, sc = Math.max(r.width / iw, r.height / ih);
+      var op = (getComputedStyle(img).objectPosition || '50% 50%').split(' '), px = parseFloat(op[0]) / 100, py = parseFloat(op[1]) / 100;
+      if (isNaN(px)) px = .5; if (isNaN(py)) py = .5;
+      var ox = (r.width - iw * sc) * px, oy = (r.height - ih * sc) * py;
+      var x = e.clientX - r.left, y = e.clientY - r.top;
+      lp.style.backgroundImage = 'url("' + (big || img.currentSrc) + '")';
+      lp.style.backgroundSize = (iw * sc * Z) + 'px ' + (ih * sc * Z) + 'px';
+      lp.style.backgroundPosition = (R - 4 - (x - ox) * Z) + 'px ' + (R - 4 - (y - oy) * Z) + 'px';
+      lp.style.transform = 'translate(' + (e.clientX - R) + 'px,' + (e.clientY - R) + 'px)';
+      lp.classList.add('on');
+    };
+    doc.querySelectorAll('.shot[data-loupe]').forEach(function (s) {
+      s.addEventListener('mouseenter', function () { cur = s; var im = s.querySelector('img'); big = im ? biggest(im) : null; if (big) { var pre = new Image(); pre.src = big; } });
+      s.addEventListener('mousemove', move);
+      s.addEventListener('mouseleave', function () { cur = null; lp.classList.remove('on'); });
+    });
+    window.addEventListener('scroll', function () { lp.classList.remove('on'); }, { passive: true });
   }
 
   /* clips: the poster shows first; a clip fades in only on its first painted frame */
@@ -73,7 +82,7 @@
     return lg && (window.innerWidth > 1440 || window.innerHeight > 1000) ? lg : v.getAttribute('data-src-wide');
   }
   function Clip(v) {
-    this.v = v; this.btn = v.closest('.scene').querySelector('.vid-btn'); this.label = v.getAttribute('data-label');
+    this.v = v; this.btn = v.closest('.shot').querySelector('.vid-btn'); this.label = v.getAttribute('data-label');
     this.paused = false; this.seen = false; this.failed = false; this.src = null;
     v.muted = true; v.defaultMuted = true; v.playsInline = true;
     var s = this;
