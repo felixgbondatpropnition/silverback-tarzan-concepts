@@ -1,6 +1,6 @@
 # Silverback Tarzan: website concepts
 
-Five unofficial design concepts for a website redesign.
+Two unofficial design concepts for a website redesign.
 
 **View them: https://felixgbondatpropnition.github.io/silverback-tarzan-concepts/**
 
